@@ -2,18 +2,26 @@ pipeline {
     agent any
 
     parameters {
-        // Auto Scaling Group AZ Management
-        string(name: 'ASG_NAME', defaultValue: 'my-asg', description: 'Auto Scaling Group name')
-        string(name: 'AZ_LIST', defaultValue: 'ap-south-2a,ap-south-2b', description: 'Comma-separated AZs')
-        choice(name: 'ASG_ACTION', choices: ['detach','attach'], description: 'Choose detach or attach AZs')
+        string(name: 'ASG_NAME', defaultValue: 'audit-afs-eng-asg', description: 'Auto Scaling Group name')
 
-        // Terraform action for DR resources
+        choice(
+            name: 'AZ_SUBNET',
+            choices: [
+                'ap-south-2a|subnet-039c11645c846ff71',
+                'ap-south-2b|subnet-05e5f31070c69a08d',
+                'ap-south-2c|subnet-0221d4b56b7fa5465'
+            ],
+            description: 'Select AZ|Subnet to attach/detach'
+        )
+
+        choice(name: 'ASG_ACTION', choices: ['detach','attach'], description: 'Choose detach or attach AZs')
         choice(name: 'TF_ACTION', choices: ['plan','apply'], description: 'Terraform action')
+        string(name: 'LAMBDA_FUNCTION_NAME', defaultValue: 'audit-afs-eng-lambda_function', description: 'Lambda function name')
         string(name: 'REGION', defaultValue: 'ap-south-2', description: 'AWS region')
     }
 
     environment {
-        AWS_CREDS = credentials('aws-creds')  // Jenkins AWS credentials ID
+        AWS_CREDS = credentials('aws-creds')
         AWS_DEFAULT_REGION = "${params.REGION}"
     }
 
@@ -30,7 +38,6 @@ pipeline {
                 sh '''
                     export AWS_ACCESS_KEY_ID=$AWS_CREDS_USR
                     export AWS_SECRET_ACCESS_KEY=$AWS_CREDS_PSW
-                    echo "Testing AWS credentials..."
                     aws sts get-caller-identity --region ${REGION}
                 '''
             }
@@ -39,6 +46,7 @@ pipeline {
         stage('Install Dependencies') {
             steps {
                 sh '''
+                    python3 -m ensurepip --upgrade
                     python3 -m pip install --upgrade pip
                     pip install boto3
                 '''
@@ -50,6 +58,10 @@ pipeline {
                 sh '''
                     export AWS_ACCESS_KEY_ID=$AWS_CREDS_USR
                     export AWS_SECRET_ACCESS_KEY=$AWS_CREDS_PSW
+
+                    # Extract AZ only
+                    AZ_LIST=$(echo "${AZ_SUBNET}" | awk -F'|' '{print $1}')
+
                     python3 lambda_function.py --asg-name ${ASG_NAME} --az-list "${AZ_LIST}" --action ${ASG_ACTION}
                 '''
             }
