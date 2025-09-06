@@ -1,0 +1,98 @@
+pipeline {
+    agent any
+
+    parameters {
+        // Auto Scaling Group AZ Management
+        string(name: 'ASG_NAME', defaultValue: 'my-asg', description: 'Auto Scaling Group name')
+        string(name: 'AZ_LIST', defaultValue: 'ap-south-2a,ap-south-2b', description: 'Comma-separated AZs')
+        choice(name: 'ASG_ACTION', choices: ['detach','attach'], description: 'Choose detach or attach AZs')
+
+        // Terraform action for DR resources
+        choice(name: 'TF_ACTION', choices: ['plan','apply'], description: 'Terraform action')
+        string(name: 'REGION', defaultValue: 'ap-south-2', description: 'AWS region')
+    }
+
+    environment {
+        AWS_CREDS = credentials('aws-creds')  // Jenkins AWS credentials ID
+        AWS_DEFAULT_REGION = "${params.REGION}"
+    }
+
+    stages {
+
+        stage('Checkout Code') {
+            steps {
+                git branch: 'main', url: 'https://github.com/KowshikNaga/Audit-afs-eng.git'
+            }
+        }
+
+        stage('Test AWS Credentials') {
+            steps {
+                sh '''
+                    export AWS_ACCESS_KEY_ID=$AWS_CREDS_USR
+                    export AWS_SECRET_ACCESS_KEY=$AWS_CREDS_PSW
+                    echo "Testing AWS credentials..."
+                    aws sts get-caller-identity --region ${REGION}
+                '''
+            }
+        }
+
+        stage('Install Dependencies') {
+            steps {
+                sh '''
+                    python3 -m pip install --upgrade pip
+                    pip install boto3
+                '''
+            }
+        }
+
+        stage('Run ASG AZ Manager') {
+            steps {
+                sh '''
+                    export AWS_ACCESS_KEY_ID=$AWS_CREDS_USR
+                    export AWS_SECRET_ACCESS_KEY=$AWS_CREDS_PSW
+                    python3 lambda_function.py --asg-name ${ASG_NAME} --az-list "${AZ_LIST}" --action ${ASG_ACTION}
+                '''
+            }
+        }
+
+        stage('Terraform Init') {
+            steps {
+                sh '''
+                    export AWS_ACCESS_KEY_ID=$AWS_CREDS_USR
+                    export AWS_SECRET_ACCESS_KEY=$AWS_CREDS_PSW
+                    terraform init
+                '''
+            }
+        }
+
+        stage('Terraform Validate') {
+            steps {
+                sh '''
+                    export AWS_ACCESS_KEY_ID=$AWS_CREDS_USR
+                    export AWS_SECRET_ACCESS_KEY=$AWS_CREDS_PSW
+                    terraform validate
+                '''
+            }
+        }
+
+        stage('Terraform Action') {
+            steps {
+                script {
+                    if (params.TF_ACTION == 'plan') {
+                        sh '''
+                            export AWS_ACCESS_KEY_ID=$AWS_CREDS_USR
+                            export AWS_SECRET_ACCESS_KEY=$AWS_CREDS_PSW
+                            terraform plan
+                        '''
+                    } else if (params.TF_ACTION == 'apply') {
+                        sh '''
+                            export AWS_ACCESS_KEY_ID=$AWS_CREDS_USR
+                            export AWS_SECRET_ACCESS_KEY=$AWS_CREDS_PSW
+                            terraform apply -auto-approve
+                        '''
+                    }
+                }
+            }
+        }
+    }
+}
