@@ -3,30 +3,24 @@ pipeline {
 
     parameters {
         string(name: 'ASG_NAME', defaultValue: 'audit-afs-eng-asg', description: 'Auto Scaling Group name')
-
         choice(
-            name: 'AZ_SUBNET',
+            name: 'AZ_SUBNET_LIST',
             choices: [
                 'ap-south-2a|subnet-039c11645c846ff71',
                 'ap-south-2b|subnet-05e5f31070c69a08d',
                 'ap-south-2c|subnet-0221d4b56b7fa5465'
             ],
-            description: 'Select AZ|Subnet to attach/detach'
+            description: 'Select one or more AZ|Subnet (comma-separated for multiple)'
         )
-
-        choice(name: 'ASG_ACTION', choices: ['detach','attach'], description: 'Choose detach or attach AZs')
-        choice(name: 'TF_ACTION', choices: ['plan','apply'], description: 'Terraform action')
-        string(name: 'LAMBDA_FUNCTION_NAME', defaultValue: 'audit-afs-eng-lambda_function', description: 'Lambda function name')
-        string(name: 'REGION', defaultValue: 'ap-south-2', description: 'AWS region')
+        choice(name: 'ASG_ACTION', choices: ['detach','attach'], description: 'Choose detach or attach subnets')
     }
 
     environment {
-        AWS_CREDS = credentials('aws-creds')
-        AWS_DEFAULT_REGION = "${params.REGION}"
+        AWS_CREDS = credentials('aws-creds')  // Jenkins AWS credentials ID
+        AWS_DEFAULT_REGION = 'ap-south-2'
     }
 
     stages {
-
         stage('Checkout Code') {
             steps {
                 git branch: 'main', url: 'https://github.com/KowshikNaga/Audit-afs-eng.git'
@@ -38,7 +32,7 @@ pipeline {
                 sh '''
                     export AWS_ACCESS_KEY_ID=$AWS_CREDS_USR
                     export AWS_SECRET_ACCESS_KEY=$AWS_CREDS_PSW
-                    aws sts get-caller-identity --region ${REGION}
+                    aws sts get-caller-identity
                 '''
             }
         }
@@ -47,63 +41,18 @@ pipeline {
             steps {
                 sh '''
                     python3 -m ensurepip --upgrade
-                    python3 -m pip install --upgrade pip
-                    pip install boto3
+                    python3 -m pip install --user boto3
                 '''
             }
         }
 
-        stage('Run ASG AZ Manager') {
+        stage('Run ASG Subnet Manager') {
             steps {
                 sh '''
                     export AWS_ACCESS_KEY_ID=$AWS_CREDS_USR
                     export AWS_SECRET_ACCESS_KEY=$AWS_CREDS_PSW
-
-                    # Extract AZ only
-                    AZ_LIST=$(echo "${AZ_SUBNET}" | awk -F'|' '{print $1}')
-
-                    python3 lambda_function.py --asg-name ${ASG_NAME} --az-list "${AZ_LIST}" --action ${ASG_ACTION}
+                    python3 lambda_function.py --asg-name ${ASG_NAME} --subnet-list "${AZ_SUBNET_LIST}" --action ${ASG_ACTION}
                 '''
-            }
-        }
-
-        stage('Terraform Init') {
-            steps {
-                sh '''
-                    export AWS_ACCESS_KEY_ID=$AWS_CREDS_USR
-                    export AWS_SECRET_ACCESS_KEY=$AWS_CREDS_PSW
-                    terraform init
-                '''
-            }
-        }
-
-        stage('Terraform Validate') {
-            steps {
-                sh '''
-                    export AWS_ACCESS_KEY_ID=$AWS_CREDS_USR
-                    export AWS_SECRET_ACCESS_KEY=$AWS_CREDS_PSW
-                    terraform validate
-                '''
-            }
-        }
-
-        stage('Terraform Action') {
-            steps {
-                script {
-                    if (params.TF_ACTION == 'plan') {
-                        sh '''
-                            export AWS_ACCESS_KEY_ID=$AWS_CREDS_USR
-                            export AWS_SECRET_ACCESS_KEY=$AWS_CREDS_PSW
-                            terraform plan
-                        '''
-                    } else if (params.TF_ACTION == 'apply') {
-                        sh '''
-                            export AWS_ACCESS_KEY_ID=$AWS_CREDS_USR
-                            export AWS_SECRET_ACCESS_KEY=$AWS_CREDS_PSW
-                            terraform apply -auto-approve
-                        '''
-                    }
-                }
             }
         }
     }
