@@ -6,9 +6,9 @@ pipeline {
         choice(
             name: 'AZ_SUBNET_LIST',
             choices: [
-                'ap-south-2a|subnet-039c11645c846ff71',
-                'ap-south-2b|subnet-05e5f31070c69a08d',
-                'ap-south-2c|subnet-0221d4b56b7fa5465'
+                'eu-west-1a | subnet-012de65bdd1b717ed',
+                'eu-west-1b | subnet-09859042e30db68f7',
+                'eu-west-1c | subnet-0215d3bb721795457'
             ],
             description: 'Select one or more AZ|Subnet (comma-separated for multiple)'
         )
